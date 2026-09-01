@@ -1,0 +1,24 @@
+Jordan Lee
+jordan.lee@example.com | +1 555 0142 | Remote
+
+Summary
+Data scientist focused on applied NLP and recommendation systems.
+
+Skills
+Python, pandas, scikit-learn, PyTorch, SQL, Airflow, Spark, sentence-transformers
+
+Experience
+Data Scientist — Insightify
+2022 – Present
+Shipped ranking models and RAG prototypes for customer support.
+
+ML Intern — DataNest
+2021 – 2022
+Feature engineering pipelines and experiment tracking.
+
+Education
+MSc Data Science — University of Edinburgh
+2020 – 2021
+
+Certifications
+TensorFlow Developer Certificate

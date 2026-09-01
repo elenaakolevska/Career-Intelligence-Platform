@@ -1,6 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 from typing import Any
+from functools import lru_cache
 
 
 def _parse_list_value(value: Any) -> list[str]:
@@ -33,43 +34,87 @@ class Settings(BaseSettings):
     test_database_url: str | None = None
     redis_url: str = 'redis://redis:6379/0'
     backend_cors_origins: list[str] = ['http://localhost:3000', 'http://localhost:5173']
+
+    # Paths
+    prompts_dir: str = '../prompts'
+    cv_upload_dir: str = './uploads/cv'
+    cv_max_upload_size_bytes: int = 5 * 1024 * 1024  # 5 MB
+    faiss_index_dir: str = './data/faiss'
+
     # LLM
     llm_provider: str = 'stub'
     llm_fallback_enabled: bool = True
     llm_fallback_order: list[str] = ['gemini', 'groq', 'ollama']
-
-    # Gemini (primary)
     gemini_api_key: str | None = None
-    gemini_model: str = 'gemini-3.6-flash'
+    gemini_model: str = 'gemini-2.0-flash'
     gemini_api_url: str = 'https://generativelanguage.googleapis.com/v1'
-
-    # Groq (optional)
     groq_api_key: str | None = None
     groq_model: str | None = 'llama-3.1-70b-versatile'
     groq_api_url: str = 'https://api.groq.com/openai/v1'
-
-    # Ollama (local fallback)
     ollama_url: str | None = None
     ollama_model: str | None = None
-
-    # Client tuning
     llm_timeout: int = 60
     llm_retries: int = 3
 
-    # CV upload
-    cv_upload_dir: str = './uploads/cv'
-    cv_max_upload_size_bytes: int = 5 * 1024 * 1024  # 5 MB
+    # PDF / OCR
+    ocr_enabled: bool = True
+    ocr_min_chars: int = 80
+    ocr_timeout_seconds: int = 60
+    ocr_languages: list[str] = ['en']
 
-    @field_validator('backend_cors_origins', 'llm_fallback_order', mode='before')
+    # Embeddings / search
+    embedding_model: str = 'BAAI/bge-small-en-v1.5'
+    embedding_dim: int = 384
+    embedding_use_stub: bool = False
+    similarity_top_k: int = 10
+    retrieval_top_k: int = 5
+    rerank_enabled: bool = False
+    rerank_model: str = 'BAAI/bge-reranker-base'
+    rerank_top_n: int = 20
+
+    # Adzuna
+    adzuna_app_id: str | None = None
+    adzuna_api_key: str | None = None
+    adzuna_base_url: str = 'https://api.adzuna.com/v1/api/jobs'
+    adzuna_country: str = 'gb'
+    adzuna_use_mock: bool = True
+    adzuna_cache_ttl_seconds: int = 3600
+    adzuna_monthly_budget: int = 250
+
+    # SerpAPI / Open Library
+    serpapi_api_key: str | None = None
+    serpapi_cache_ttl_seconds: int = 86400
+
+    # Auth / JWT
+    jwt_secret: str = 'skillbridge-dev-secret-change-me'
+    jwt_algorithm: str = 'HS256'
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
+
+    # Feature flags
+    enable_cv_llm_parse: bool = True
+    enable_ats_scoring: bool = True
+    enable_auto_embed: bool = True
+
+    @field_validator(
+        'backend_cors_origins',
+        'llm_fallback_order',
+        'ocr_languages',
+        mode='before',
+    )
+    @classmethod
     def _parse_string_lists(cls, value: Any) -> list[str]:
-        """Allow configured list fields to be provided as JSON arrays or comma-separated strings."""
         return _parse_list_value(value)
 
 
-try:
-    settings = Settings()
-except Exception as exc:  # fallback if .env parsing fails (malformed env value)
-    class _SettingsNoEnv(Settings):
-        model_config = SettingsConfigDict(env_file=None, extra='ignore')
+@lru_cache
+def get_settings() -> Settings:
+    try:
+        return Settings()
+    except Exception:
+        class _SettingsNoEnv(Settings):
+            model_config = SettingsConfigDict(env_file=None, extra='ignore')
 
-    settings = _SettingsNoEnv()
+        return _SettingsNoEnv()
+
+
+settings = get_settings()

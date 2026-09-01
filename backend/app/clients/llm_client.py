@@ -153,6 +153,9 @@ class GeminiClient(LLMClient):
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"maxOutputTokens": max_tokens},
         }
+        # Optional: force JSON mode for structured extraction callers
+        if kwargs.get('json_mode'):
+            payload['generationConfig']['responseMimeType'] = 'application/json'
 
         headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
         response = _request_with_retries(
@@ -169,21 +172,49 @@ class GeminiClient(LLMClient):
         except ValueError as exc:
             raise ExternalServiceError(f'Gemini response parsing failed: {exc}') from exc
 
-        if isinstance(data, dict):
-            candidates = data.get('candidates')
-            if isinstance(candidates, list) and candidates:
-                first = candidates[0]
-                if isinstance(first, dict):
-                    content = first.get('content') or {}
-                    parts = content.get('parts') if isinstance(content, dict) else None
-                    if isinstance(parts, list) and parts:
-                        first_part = parts[0]
-                        if isinstance(first_part, dict):
-                            text = first_part.get('text')
-                            if text:
-                                return str(text)
-            return str(data)
-        return str(data)
+        text = _extract_gemini_text(data)
+        if text:
+            return text
+        raise ExternalServiceError(f'Gemini returned no text content: {data!r}'[:500])
+
+
+def _extract_gemini_text(data: Any) -> str | None:
+    """Collect text parts from a Gemini generateContent payload."""
+    if not isinstance(data, dict):
+        return None
+    candidates = data.get('candidates')
+    if not isinstance(candidates, list) or not candidates:
+        return None
+    first = candidates[0]
+    if not isinstance(first, dict):
+        return None
+    content = first.get('content') or {}
+    parts = content.get('parts') if isinstance(content, dict) else None
+    if not isinstance(parts, list):
+        # Some responses put parts at the candidate root
+        parts = first.get('parts') if isinstance(first.get('parts'), list) else None
+    if not isinstance(parts, list):
+        return None
+
+    chunks: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        # Skip internal "thought" / reasoning parts when a later text part exists
+        if part.get('thought') is True:
+            continue
+        piece = part.get('text')
+        if piece:
+            chunks.append(str(piece))
+    if chunks:
+        return ''.join(chunks).strip() or None
+
+    # Fallback: include thought text if that was all we got
+    for part in parts:
+        if isinstance(part, dict) and part.get('text'):
+            chunks.append(str(part.get('text')))
+    joined = ''.join(chunks).strip()
+    return joined or None
 
 
 class GroqClient(LLMClient):
@@ -319,9 +350,18 @@ class FallbackLLMClient(LLMClient):
                 return provider.generate(prompt, **kwargs)
             except ExternalServiceError as exc:
                 last_error = exc
-                if not _is_transient_http_error(exc) or index >= len(self.providers) - 1:
+                # Walk the chain on transient errors OR hard 404/model-not-found so a
+                # bad primary model does not skip working fallbacks.
+                msg = str(exc).lower()
+                hard_skip = any(
+                    token in msg
+                    for token in ('404', 'not found', 'does not exist', 'no longer available')
+                )
+                if index >= len(self.providers) - 1:
                     raise
-                continue
+                if _is_transient_http_error(exc) or hard_skip:
+                    continue
+                raise
         if last_error is not None:
             raise last_error
         raise ExternalServiceError('No LLM provider available')

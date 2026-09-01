@@ -14,6 +14,8 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
 
   backend:
     build:
@@ -21,6 +23,9 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     env_file:
       - .env
+    environment:
+      # Repo prompts/ is outside ./backend; mount + absolute path for Docker
+      PROMPTS_DIR: /prompts
     depends_on:
       - db
       - redis
@@ -28,6 +33,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./prompts:/prompts:ro
 
   frontend:
     build:
@@ -43,3 +49,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

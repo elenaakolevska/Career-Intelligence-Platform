@@ -64,19 +64,21 @@ class TestPdfExtractor:
     def test_extracts_text_from_simple_pdf(self, tmp_path):
         pdf_path = tmp_path / 'simple.pdf'
         pdf_path.write_bytes(_pdf_hello_world())
-        text = extract_pdf_text(pdf_path)
+        text, method = extract_pdf_text(pdf_path, allow_ocr=False)
         assert 'Hello World' in text
+        assert method == 'native'
 
     def test_extracts_text_from_unicode_pdf(self, tmp_path):
         pdf_path = tmp_path / 'unicode.pdf'
         pdf_path.write_bytes(_pdf_unicode())
-        text = extract_pdf_text(pdf_path)
+        text, method = extract_pdf_text(pdf_path, allow_ocr=False)
         assert 'R\xe9sum\xe9' in text or 'Candidat' in text
+        assert method == 'native'
 
     def test_extracts_text_from_multi_column_layout(self, tmp_path):
         pdf_path = tmp_path / 'columns.pdf'
         pdf_path.write_bytes(_pdf_multi_column())
-        text = extract_pdf_text(pdf_path)
+        text, _method = extract_pdf_text(pdf_path, allow_ocr=False)
         assert 'Skills' in text
         assert 'Experience' in text
         assert 'Education' in text
@@ -86,8 +88,8 @@ class TestPdfExtractor:
     def test_raises_on_empty_or_no_text_pdf(self, tmp_path):
         pdf_path = tmp_path / 'empty.pdf'
         pdf_path.write_bytes(_pdf_empty())
-        with pytest.raises(PDFExtractionError, match='no extractable text'):
-            extract_pdf_text(pdf_path)
+        with pytest.raises(PDFExtractionError, match='no extractable text|OCR'):
+            extract_pdf_text(pdf_path, allow_ocr=False)
 
     def test_raises_on_encrypted_pdf(self, tmp_path):
         doc = fitz.open()
@@ -99,17 +101,17 @@ class TestPdfExtractor:
         pdf_path = tmp_path / 'encrypted.pdf'
         pdf_path.write_bytes(bio.getvalue())
         with pytest.raises(PDFExtractionError, match='encrypted'):
-            extract_pdf_text(pdf_path)
+            extract_pdf_text(pdf_path, allow_ocr=False)
 
     def test_raises_on_corrupted_pdf(self, tmp_path):
         pdf_path = tmp_path / 'corrupt.pdf'
         pdf_path.write_bytes(b'%PDF-1.4 corrupted garbage no valid objects')
         with pytest.raises(PDFExtractionError, match='corrupted'):
-            extract_pdf_text(pdf_path)
+            extract_pdf_text(pdf_path, allow_ocr=False)
 
     def test_raises_on_missing_file(self, tmp_path):
         with pytest.raises(PDFExtractionError, match='File not found'):
-            extract_pdf_text(tmp_path / 'nonexistent.pdf')
+            extract_pdf_text(tmp_path / 'nonexistent.pdf', allow_ocr=False)
 
     def test_whitespace_only_detection(self, tmp_path):
         doc = fitz.open()
@@ -120,5 +122,19 @@ class TestPdfExtractor:
         doc.close()
         pdf_path = tmp_path / 'whitespace.pdf'
         pdf_path.write_bytes(bio.getvalue())
-        with pytest.raises(PDFExtractionError, match='no extractable text'):
-            extract_pdf_text(pdf_path)
+        with pytest.raises(PDFExtractionError, match='no extractable text|OCR'):
+            extract_pdf_text(pdf_path, allow_ocr=False)
+
+    def test_ocr_fallback_invoked_for_low_text(self, tmp_path, monkeypatch):
+        from app.core.config import settings
+        from app.services import pdf_extractor as pe
+
+        monkeypatch.setattr(settings, 'ocr_enabled', True)
+        monkeypatch.setattr(settings, 'ocr_min_chars', 1000)
+        monkeypatch.setattr(pe, '_ocr_with_timeout', lambda path: 'OCR recovered text with Python skills')
+
+        pdf_path = tmp_path / 'short.pdf'
+        pdf_path.write_bytes(_pdf_hello_world())
+        text, method = extract_pdf_text(pdf_path)
+        assert method == 'ocr'
+        assert 'OCR recovered' in text

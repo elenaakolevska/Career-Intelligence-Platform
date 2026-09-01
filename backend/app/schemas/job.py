@@ -8,6 +8,11 @@ class JobCreate(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     url: Optional[str] = None
+    salary_min: Optional[float] = None
+    salary_max: Optional[float] = None
+    salary_raw: Optional[str] = None
+    external_id: Optional[str] = None
+    source: Optional[str] = None
 
 
 class JobUpdate(BaseModel):
@@ -16,6 +21,9 @@ class JobUpdate(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     url: Optional[str] = None
+    salary_min: Optional[float] = None
+    salary_max: Optional[float] = None
+    salary_raw: Optional[str] = None
 
 
 class JobRead(BaseModel):
@@ -25,4 +33,9 @@ class JobRead(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     url: Optional[str] = None
+    salary_min: Optional[float] = None
+    salary_max: Optional[float] = None
+    salary_raw: Optional[str] = None
+    external_id: Optional[str] = None
+    source: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)

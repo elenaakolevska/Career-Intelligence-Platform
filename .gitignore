@@ -23,3 +23,9 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# App data
+backend/uploads/
+backend/data/faiss/
+*.faiss
+*_vectors.npy

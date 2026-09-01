@@ -1,34 +1,99 @@
-import { Routes, Route, Link } from 'react-router-dom'
-import CVUpload from './pages/CVUpload'
+import { Route, Routes, Navigate } from 'react-router-dom'
+import AppLayout from './components/AppLayout'
+import RequireAuth from './components/RequireAuth'
+import RequireCv from './components/RequireCv'
+import { AnalysisProvider } from './context/AnalysisContext'
+import { AuthProvider } from './context/AuthContext'
+import { SessionProvider } from './context/SessionContext'
+import { SkillDrawerProvider } from './context/SkillDrawerContext'
+import { RoadmapExtrasProvider } from './context/RoadmapExtrasContext'
+import { ToastProvider } from './components/ToastHost'
+import CvPage from './pages/CvPage'
+import DashboardPage from './pages/DashboardPage'
+import HomePage from './pages/HomePage'
+import InterviewPage from './pages/InterviewPage'
+import JobsPage from './pages/JobsPage'
+import LoginPage from './pages/LoginPage'
+import NotFoundPage from './pages/NotFoundPage'
+import RegisterPage from './pages/RegisterPage'
+import RoadmapPage from './pages/RoadmapPage'
+import SettingsPage from './pages/SettingsPage'
+import SkillGapsPage from './pages/SkillGapsPage'
 
-const Home = () => (
-  <main className="max-w-3xl mx-auto p-8">
-    <h1 className="text-2xl font-semibold mb-4">AI Career Intelligence Platform</h1>
-    <p className="mb-4">The initial scaffold is ready. Use the navigation to test upload.</p>
-    <ul className="list-disc ml-6">
-      <li>FastAPI backend</li>
-      <li>React + Vite frontend</li>
-      <li>Docker Compose services</li>
-      <li>CI workflow</li>
-    </ul>
-  </main>
-)
-
-const App = () => {
+export default function App() {
   return (
-    <div className="min-h-screen">
-      <nav className="bg-white shadow">
-        <div className="max-w-5xl mx-auto p-4 flex gap-4">
-          <Link to="/" className="font-medium">Home</Link>
-          <Link to="/cv/upload" className="font-medium">Upload CV</Link>
-        </div>
-      </nav>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/cv/upload" element={<CVUpload />} />
-      </Routes>
-    </div>
+    <AuthProvider>
+      <ToastProvider>
+        <SessionProvider>
+          <AnalysisProvider>
+            <RoadmapExtrasProvider>
+              <SkillDrawerProvider>
+              <Routes>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+
+                <Route
+                  element={
+                    <RequireAuth>
+                      <AppLayout />
+                    </RequireAuth>
+                  }
+                >
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/cv" element={<CvPage />} />
+                  <Route path="/upload" element={<Navigate to="/cv" replace />} />
+                  <Route path="/cv/upload" element={<Navigate to="/cv" replace />} />
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <RequireCv>
+                        <DashboardPage />
+                      </RequireCv>
+                    }
+                  />
+                  <Route
+                    path="/jobs"
+                    element={
+                      <RequireCv>
+                        <JobsPage />
+                      </RequireCv>
+                    }
+                  />
+                  <Route
+                    path="/skills"
+                    element={
+                      <RequireCv>
+                        <SkillGapsPage />
+                      </RequireCv>
+                    }
+                  />
+                  <Route
+                    path="/roadmap"
+                    element={
+                      <RequireCv>
+                        <RoadmapPage />
+                      </RequireCv>
+                    }
+                  />
+                  <Route
+                    path="/interview"
+                    element={
+                      <RequireCv>
+                        <InterviewPage />
+                      </RequireCv>
+                    }
+                  />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="*" element={<NotFoundPage />} />
+                </Route>
+
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              </Routes>
+            </SkillDrawerProvider>
+            </RoadmapExtrasProvider>
+          </AnalysisProvider>
+        </SessionProvider>
+      </ToastProvider>
+    </AuthProvider>
   )
 }
-
-export default App;

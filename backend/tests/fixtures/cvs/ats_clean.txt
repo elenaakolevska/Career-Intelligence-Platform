@@ -1,0 +1,20 @@
+Taylor Brooks
+taylor.brooks@example.com | +44 7700 900789 | Bristol, UK
+
+Summary
+Software engineer specializing in backend services and cloud infrastructure.
+
+Skills
+Python, Go, PostgreSQL, Docker, Kubernetes, AWS
+
+Experience
+Software Engineer — Harbor Tech
+Jan 2020 – Present
+Designed REST APIs, improved deployment pipelines, mentored juniors.
+
+Education
+BEng Software Engineering — University of Bristol
+2016 – 2019
+
+Certifications
+AWS Cloud Practitioner

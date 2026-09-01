@@ -1,0 +1,27 @@
+Samira Khan
+samira.khan@example.com | +44 7700 900456 | London, UK
+
+Summary
+Senior full-stack engineer with 8 years delivering React and Python platforms at scale.
+
+Skills
+Python, FastAPI, React, TypeScript, PostgreSQL, Redis, Kubernetes, AWS, Terraform
+
+Experience
+Staff Engineer — Northstar Systems
+2021 – Present
+Led API platform migration to FastAPI and React design system adoption.
+
+Senior Software Engineer — BrightCart
+2017 – 2021
+Built checkout microservices and observability stack.
+
+Education
+MSc Software Engineering — UCL
+2015 – 2016
+BSc Computing — King's College London
+2012 – 2015
+
+Certifications
+AWS Solutions Architect Associate
+CKA

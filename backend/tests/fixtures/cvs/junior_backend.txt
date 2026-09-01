@@ -1,0 +1,20 @@
+Alex Petrov
+alex.petrov@example.com | +44 7700 900123 | Manchester, UK
+
+Summary
+Junior backend developer with internship experience building REST APIs in Python.
+
+Skills
+Python, FastAPI, SQL, Git, Docker, Linux
+
+Experience
+Backend Intern — SoftWave
+Jun 2024 – Aug 2024
+Implemented FastAPI endpoints and wrote pytest coverage for order services.
+
+Education
+BSc Computer Science — University of Manchester
+2021 – 2024
+
+Certifications
+None
