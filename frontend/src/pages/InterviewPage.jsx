@@ -9,12 +9,25 @@ import {
   startInterview,
 } from '../api'
 import { MetricCard, PageHeader, ViewShell } from '../components/ui'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { useToast } from '../components/ToastHost'
 import { useSession } from '../context/SessionContext'
 import { useInterviewSocket } from '../hooks/useInterviewSocket'
 
 const ACTIVE_KEY = 'skillbridge.activeInterviewSession'
-const TARGET_QUESTIONS = 8
+const ROLE_SUGGESTIONS = [
+  'Java Developer',
+  'Frontend Developer',
+  'Backend Developer',
+  'Full Stack Developer',
+  'Data Scientist',
+  'DevOps Engineer',
+  'QA Engineer',
+  'Product Manager',
+  'Machine Learning Engineer',
+  'Mobile Developer',
+]
+const LEVELS = ['junior', 'mid', 'senior']
 
 function ChatMsg({ event }) {
   if (event.kind === 'system') {
@@ -83,9 +96,11 @@ export default function InterviewPage() {
   })
   const [answer, setAnswer] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmAction, setConfirmAction] = useState(null)
   const [setupError, setSetupError] = useState(null)
   const [history, setHistory] = useState([])
   const bottomRef = useRef(null)
+  const nearBottomRef = useRef(true)
   const requestingNext = useRef(false)
   const questionCountSeen = useRef(0)
 
@@ -107,8 +122,24 @@ export default function InterviewPage() {
   }, [sessionId])
 
   useEffect(() => {
+    const track = () => {
+      const el = bottomRef.current
+      if (!el) return
+      nearBottomRef.current = el.getBoundingClientRect().top < window.innerHeight + 80
+    }
+    window.addEventListener('scroll', track, { passive: true })
+    window.addEventListener('resize', track, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', track)
+      window.removeEventListener('resize', track)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (session?.status === 'completed' || session?.status === 'abandoned') return
+    if (!nearBottomRef.current) return
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [events])
+  }, [events, session?.status])
 
   // Only clear the in-flight flag when a *new* question arrives (not on status spam).
   useEffect(() => {
@@ -122,7 +153,16 @@ export default function InterviewPage() {
     }
   }, [events])
 
-  // Auto-ask first question, then the next after each feedback (up to TARGET_QUESTIONS).
+  // Reconnect safety: if the socket dropped after sending `next_question` but
+  // before the question arrived, the in-flight flag would otherwise stay true
+  // and the auto-request loop would never recover. Clearing it on (re)open lets
+  // the auto-request effect re-evaluate against the re-hydrated transcript.
+  useEffect(() => {
+    if (connection === 'open') requestingNext.current = false
+  }, [connection])
+
+  // Auto-ask first question, then the next after each feedback — the session only
+  // ends when the user completes or abandons it.
   useEffect(() => {
     if (!sessionId || connection !== 'open') return
     if (session?.status === 'completed' || session?.status === 'abandoned') return
@@ -136,9 +176,7 @@ export default function InterviewPage() {
 
     const needFirst = questionCount === 0
     const needNext =
-      lastTurn?.kind === 'feedback' &&
-      questionCount === feedbackCount &&
-      questionCount < TARGET_QUESTIONS
+      lastTurn?.kind === 'feedback' && questionCount === feedbackCount
 
     if (!needFirst && !needNext) return
 
@@ -171,12 +209,7 @@ export default function InterviewPage() {
 
   const turnLabel = useMemo(() => {
     const q = events.filter((e) => e.kind === 'question').length
-    return `${String(Math.max(q, 1)).padStart(2, '0')} / ${String(TARGET_QUESTIONS).padStart(2, '0')}`
-  }, [events])
-
-  const roundComplete = useMemo(() => {
-    const feedbackCount = events.filter((e) => e.kind === 'feedback').length
-    return feedbackCount >= TARGET_QUESTIONS
+    return `Question ${String(Math.max(q, 1)).padStart(2, '0')}`
   }, [events])
 
   const score = session?.running_score
@@ -232,19 +265,19 @@ export default function InterviewPage() {
       overall,
       technicalTrend: rating(technical),
       communicationTrend: rating(communication),
-      overallTrend: vsLast || (session?.status === 'completed' || roundComplete ? 'Complete' : 'In progress'),
+      overallTrend: vsLast || (session?.status === 'completed' ? 'Complete' : 'In progress'),
     }
-  }, [events, score, session?.status, roundComplete])
+  }, [events, score, session?.status])
 
   useEffect(() => {
     if (score == null) return
-    if (session?.status !== 'completed' && !roundComplete) return
+    if (session?.status !== 'completed') return
     try {
       localStorage.setItem('skillbridge.lastInterviewScore', String(score))
     } catch {
       /* ignore */
     }
-  }, [score, session?.status, roundComplete])
+  }, [score, session?.status])
 
   async function startSession() {
     const targetRole = role.trim()
@@ -294,7 +327,7 @@ export default function InterviewPage() {
   }
 
   async function leaveSession() {
-    if (sessionId) {
+    if (sessionId && session?.status !== 'completed' && session?.status !== 'abandoned') {
       try {
         await abandonInterview(sessionId)
       } catch {
@@ -340,10 +373,10 @@ export default function InterviewPage() {
   const feedbackCount = events.filter((e) => e.kind === 'feedback').length
   const waitingForNext =
     connection === 'open' &&
+    session?.status !== 'completed' &&
+    session?.status !== 'abandoned' &&
     !awaitingAnswer &&
-    !roundComplete &&
-    (questionCount === 0 ||
-      (feedbackCount === questionCount && questionCount < TARGET_QUESTIONS))
+    (questionCount === 0 || feedbackCount === questionCount)
   const generating = waitingForNext
   const evaluating =
     connection === 'open' &&
@@ -359,9 +392,7 @@ export default function InterviewPage() {
       ? questionCount === 0
         ? 'Generating your first question…'
         : 'Generating the next question…'
-      : roundComplete
-        ? `You’ve completed all ${TARGET_QUESTIONS} questions. End the session when you’re ready.`
-        : null
+      : null
 
   // Internal/status lines only as centered notices — never as interviewer bubbles.
   // Drop busy notices from the event stream when we already show liveNotice.
@@ -375,22 +406,33 @@ export default function InterviewPage() {
 
   return (
     <ViewShell>
-      <PageHeader
-        eyebrow={`AI technical interview · ${difficulty} track`}
-        title="Interview Simulator."
-        sub={
-          sessionId
-            ? `Session #${sessionId} · ${session?.role || role || 'Role'} · ${connection}`
-            : 'Start a live WebSocket practice session'
-        }
-        actions={
-          sessionId ? (
-            <button type="button" className="btn" onClick={finishSession}>
-              End session
-            </button>
-          ) : null
-        }
-      />
+      {sessionId ? (
+        <PageHeader
+          eyebrow={`AI technical interview · ${difficulty} track`}
+          title="Interview Simulator."
+          sub={`${session?.role || role || 'Role'} · ${connection}`}
+          actions={
+            <div className="pagehead-actions">
+              {session?.status === 'completed' ? (
+                <button type="button" className="btn primary" onClick={leaveSession}>
+                  Start new session
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => setConfirmAction('end')}
+                >
+                  End session
+                </button>
+              )}
+              <button type="button" className="btn" onClick={() => setConfirmAction('leave')}>
+                Leave
+              </button>
+            </div>
+          }
+        />
+      ) : null}
 
       <div className="tabs" role="tablist">
         <button type="button" className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>
@@ -426,37 +468,80 @@ export default function InterviewPage() {
           )}
         </div>
       ) : !sessionId ? (
-        <div className="card interview-setup-card" style={{ maxWidth: 480 }}>
-          {setupError && (
-            <div className="callout is-error" role="alert">
-              {setupError}
+        <div className="interview-hero">
+          <div className="interview-hero-copy">
+            <h2>Practice makes interviews easier.</h2>
+            <p>
+              Pick a role and a level — the AI interviewer asks adaptive technical questions,
+              scores every answer and coaches you in real time.
+            </p>
+            <ul className="interview-hero-points">
+              <li>
+                <b>Adaptive</b> — questions follow your role, level and answers.
+              </li>
+              <li>
+                <b>Live feedback</b> — a score and coaching after every answer.
+              </li>
+              <li>
+                <b>No pressure</b> — sessions end only when you decide.
+              </li>
+            </ul>
+          </div>
+          <div className="card interview-setup-card">
+            {setupError && (
+              <div className="callout is-error" role="alert">
+                {setupError}
+              </div>
+            )}
+            <label>
+              Target role
+              <input
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                placeholder="e.g. Java Developer"
+                autoComplete="off"
+                list="role-suggestions"
+              />
+            </label>
+            <div className="chipgroup">
+              <span className="chipgroup-label">Popular roles</span>
+              <div className="role-chips" role="listbox" aria-label="Popular roles">
+                {ROLE_SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    className={`role-chip${role.trim().toLowerCase() === suggestion.toLowerCase() ? ' active' : ''}`}
+                    onClick={() => setRole(suggestion)}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
-          <label>
-            Target role
-            <input
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              placeholder="e.g. Junior Java Developer"
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            Difficulty
-            <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
-              <option value="junior">Junior</option>
-              <option value="mid">Mid</option>
-              <option value="senior">Senior</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={busy || !userId || !role.trim()}
-            onClick={startSession}
-          >
-            {busy ? 'Starting…' : 'Start interview'}
-          </button>
+            <label>
+              Experience level
+              <div className="segmented" role="radiogroup" aria-label="Experience level">
+                {LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    className={difficulty === level ? 'active' : ''}
+                    onClick={() => setDifficulty(level)}
+                  >
+                    {level === 'junior' ? 'Junior' : level === 'mid' ? 'Mid' : 'Senior'}
+                  </button>
+                ))}
+              </div>
+            </label>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={busy || !userId || !role.trim()}
+              onClick={startSession}
+            >
+              {busy ? 'Starting…' : 'Start interview'}
+            </button>
+          </div>
         </div>
       ) : (
         <>
@@ -553,13 +638,32 @@ export default function InterviewPage() {
               trendStyle={{ color: 'var(--primary2)' }}
             />
           </div>
-          <div style={{ marginTop: 12, textAlign: 'right' }}>
-            <button type="button" className="link" onClick={leaveSession}>
-              Leave session →
-            </button>
-          </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmAction === 'end'}
+        title="End session?"
+        message="This finishes the interview and saves your score and feedback."
+        confirmLabel="End session"
+        onConfirm={() => {
+          setConfirmAction(null)
+          finishSession()
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction === 'leave'}
+        title="Leave session?"
+        message="This abandons the interview without a final score."
+        confirmLabel="Leave session"
+        tone="danger"
+        onConfirm={() => {
+          setConfirmAction(null)
+          leaveSession()
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </ViewShell>
   )
 }

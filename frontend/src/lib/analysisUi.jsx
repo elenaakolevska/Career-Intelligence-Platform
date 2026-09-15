@@ -55,7 +55,7 @@ function clipSentence(text, max = 160) {
 }
 
 /**
- * Build a short cohesive profile paragraph for the CV page.
+ * Build a richer, scannable profile summary for the CV page.
  */
 export function buildProfileSummary(cv, report) {
   const structured = report?.cv_summary?.structured_cv || cv?.structured_data || {}
@@ -63,7 +63,7 @@ export function buildProfileSummary(cv, report) {
 
   const name = structured?.name || null
   const location = structured?.location || null
-  const about = clipSentence(structured?.summary || '', 180)
+  const about = clipSentence(structured?.summary || '', 220)
   const skills = extractSkills(cv, report).slice(0, 8)
 
   const exp = Array.isArray(structured?.experience) ? structured.experience[0] : null
@@ -76,32 +76,46 @@ export function buildProfileSummary(cv, report) {
     ? [edu.degree, edu.institution].filter(Boolean).join(', ')
     : null
 
-  const sentences = []
-  if (name && location) sentences.push(`${name} is based in ${location}.`)
-  else if (name) sentences.push(`${name}.`)
-  else if (location) sentences.push(`Based in ${location}.`)
+  const rawSummaryText = String(structured?.summary || text || '').replace(/\s+/g, ' ').trim()
+  const hasMeaningfulSummary = Boolean(rawSummaryText) && !/^no .* available\.?$/i.test(rawSummaryText)
 
-  if (about) sentences.push(about.endsWith('.') ? about : `${about}.`)
-  if (roleBits) sentences.push(`Most recent role: ${roleBits}.`)
-  if (eduBits) sentences.push(`Education: ${eduBits}.`)
+  const bullets = []
+  if (about && hasMeaningfulSummary) bullets.push(about.endsWith('.') ? about : `${about}.`)
+  if (roleBits) bullets.push(`Most recent role: ${roleBits}.`)
+  if (eduBits) bullets.push(`Education: ${eduBits}.`)
   if (skills.length) {
-    sentences.push(`Key skills include ${skills.map(displaySkillName).join(', ')}.`)
+    bullets.push(`Key strengths: ${skills.map(displaySkillName).join(', ')}.`)
   }
 
-  const paragraph = sentences.join(' ').trim()
-  if (paragraph) {
-    return { paragraph, fallbackText: null }
+  const intro =
+    name && location ? `${name} is based in ${location}.` : name ? `${name}.` : location ? `Based in ${location}.` : null
+
+  if (bullets.length > 0 || intro) {
+    const paragraph = [intro, ...bullets].filter(Boolean).join(' ').trim()
+    return {
+      paragraph,
+      bullets: bullets.slice(0, 4),
+      fallbackText: null,
+    }
   }
 
-  if (text && text !== 'No AI summary available yet.') {
-    return { paragraph: null, fallbackText: clipSentence(text, 320) || text }
+  return {
+    paragraph: null,
+    bullets: [],
+    fallbackText: 'No structured profile details were detected yet. Upload a CV or re-run analysis to generate a summary.',
   }
-
-  return { paragraph: null, fallbackText: 'No AI summary available yet.' }
 }
 
 export function extractGaps(report) {
   return Array.isArray(report?.skill_gaps?.gaps) ? report.skill_gaps.gaps : []
+}
+
+export function extractInsights(report) {
+  return Array.isArray(report?.insights) ? report.insights : []
+}
+
+export function extractSources(report) {
+  return Array.isArray(report?.sources) ? report.sources : []
 }
 
 export function extractMatches(report) {
@@ -204,13 +218,6 @@ export function fillToneForDemand(demand, priority) {
   if (p === 'high' || demand >= 60) return 'red'
   if (p === 'medium' || demand >= 40) return 'amber'
   return 'green'
-}
-
-export function impactLabel(priority) {
-  const p = String(priority || 'medium').toLowerCase()
-  if (p === 'high') return 'HIGH IMPACT'
-  if (p === 'low') return 'NICE TO HAVE'
-  return 'MEDIUM'
 }
 
 export function jobMeta(job) {

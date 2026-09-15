@@ -49,6 +49,8 @@ class CareerGraphState(TypedDict):
     # --- Retrieval Agent ---
     retrieval_context: NotRequired[list[dict[str, Any]] | None]
     retrieval_requests: NotRequired[list[dict[str, Any]] | None]
+    retrieval_narratives: NotRequired[list[dict[str, Any]] | None]
+    sources: NotRequired[list[dict[str, Any]] | None]
 
     # --- Market Trends Agent ---
     market_trends: NotRequired[dict[str, Any] | None]
@@ -81,6 +83,8 @@ STATE_FIELD_OWNERS: dict[str, str] = {
     'ranked_jobs': 'job_matching_agent',
     'retrieval_context': 'retrieval_agent',
     'retrieval_requests': 'any',  # enqueued by requesting agents; cleared by retrieval_agent
+    'retrieval_narratives': 'retrieval_agent',
+    'sources': 'retrieval_agent',
     'market_trends': 'market_trends_agent',
     'skill_gaps': 'skill_gap_agent',
     'learning_roadmap': 'learning_path_agent',
@@ -104,6 +108,8 @@ def initial_state(*, cv_id: int | None = None, user_id: int | None = None) -> Ca
         'ranked_jobs': None,
         'retrieval_context': None,
         'retrieval_requests': [],
+        'retrieval_narratives': [],
+        'sources': [],
         'market_trends': None,
         'skill_gaps': None,
         'learning_roadmap': None,

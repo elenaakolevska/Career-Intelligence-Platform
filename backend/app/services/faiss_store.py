@@ -68,6 +68,16 @@ class FaissStore:
         if _HAS_FAISS and self._index is not None:
             faiss.write_index(self._index, str(self.index_path))
 
+    def clear(self) -> None:
+        """Empty the index in memory and remove persisted files (ingestion reset)."""
+        with _lock:
+            self._ids = []
+            self._vectors = np.zeros((0, self.dim), dtype='float32')
+            self._index = self._new_index()
+            for path in (self.map_path, self.vectors_path, self.index_path):
+                if path.exists():
+                    path.unlink()
+
     def add(self, entity_id: str, vector: np.ndarray) -> None:
         with _lock:
             vec = np.asarray(vector, dtype='float32').reshape(1, -1)

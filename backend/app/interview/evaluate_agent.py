@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import difflib
 import logging
+import random
 import re
 import time
 from datetime import datetime, timezone
@@ -262,6 +264,30 @@ _TEACHING_HINTS: list[tuple[re.Pattern[str], str]] = [
         'Tie your answer to the learning setup: labeled vs unlabeled data, how you split data, '
         'which metric matches the business cost of mistakes, and one concrete prevention step.',
     ),
+    (
+        re.compile(r'\b(re.?render|memo|usememo|usecallback|props|state|list view|virtualiz|shouldcomponentupdate)\b', re.I),
+        'React re-renders when props, state, or context change, or when a parent re-renders. '
+        'In lists, avoid re-creating props and callbacks each render: use stable keys, React.memo, '
+        'useMemo/useCallback, and windowing (e.g. react-window) for very long lists.',
+    ),
+    (
+        re.compile(r'\b(code.?split|lazy|suspense|design tokens|design system|monorepo|architecture|teams?)\b', re.I),
+        'Split by route with React.lazy + Suspense; share design tokens and UI primitives in a '
+        'versioned package; give each team clear ownership (CODEOWNERS) and enforce contract tests '
+        'at package boundaries.',
+    ),
+    (
+        re.compile(r'\b(api|error handling|error states?|loading states?|error boundary|retry)\b', re.I),
+        'Centralize API calls in one typed client; model every request as idle/loading/success/error; '
+        'show inline errors with a retry action, and catch unexpected failures in an error boundary '
+        'plus a global toast so users always know what failed and can recover.',
+    ),
+    (
+        re.compile(r'\b(performance|lcp|inp|web vitals|core web vitals|budget|critical path|cls)\b', re.I),
+        'Define budgets for LCP, INP and CLS per page type, measure them in CI (Lighthouse lab) and in '
+        'production (RUM), and block the release when a metric regresses past budget; then optimize '
+        'the largest contentful element and long main-thread tasks.',
+    ),
 ]
 
 
@@ -293,6 +319,41 @@ def _teaching_hint(question: str) -> str:
         'Restate the core idea the question asks about in 2–3 sentences, then add one short '
         'concrete example from real work or a project.'
     )
+
+
+_UNCERTAINTY_KEYWORDS = frozenset(
+    {
+        'comfortable',
+        'confident',
+        'sure',
+        'certain',
+        'familiar',
+        'nervous',
+        'scared',
+        'afraid',
+        'anxious',
+        'worried',
+        'ready',
+        'prepared',
+        'remember',
+        'recall',
+        'understand',
+        'knowledge',
+        'expertise',
+        'experienced',
+    }
+)
+
+
+def _fuzzy_uncertainty_word(text: str) -> bool:
+    """Detect uncertainty keywords even with small typos (e.g. "comfortab;e")."""
+    for word in re.findall(r'[a-z]{4,}', text):
+        if word in _UNCERTAINTY_KEYWORDS:
+            return True
+        for kw in _UNCERTAINTY_KEYWORDS:
+            if abs(len(word) - len(kw)) <= 1 and difflib.SequenceMatcher(None, word, kw).ratio() >= 0.85:
+                return True
+    return False
 
 
 def _is_uncertainty_reply(answer: str) -> bool:
@@ -329,6 +390,15 @@ def _is_uncertainty_reply(answer: str) -> bool:
     ):
         return True
 
+    # Typo-tolerant fallback: short negative answers with a fuzzy uncertainty keyword
+    # (e.g. "i am not comfortab;e" → "not comfortable")
+    if signal_hits == 0 and words <= 12:
+        cleaned = re.sub(r'[^a-z\s]', '', a.lower())
+        if re.search(r'\b(not|no|cant|cannot|never|dont)\b', cleaned) and _fuzzy_uncertainty_word(
+            cleaned
+        ):
+            return True
+
     return False
 
 
@@ -349,35 +419,100 @@ def _cite_from_answer(answer: str, *, limit: int = 2) -> list[str]:
     return cites
 
 
+# Rotating openers per phrasing category so repeated "I don't know" replies
+# never sound identical.
+_NERVOUS_OPENERS = [
+    'feeling nervous is completely normal — admitting it instead of bluffing is honest '
+    'and shows real self-awareness.',
+    'nerves are a sign you care — saying so honestly beats any bluff, and interviewers '
+    'notice that maturity.',
+    'everyone gets nervous; being upfront about it is honest and makes you come across '
+    'as self-aware, which interviewers love.',
+]
+
+_COMFORT_OPENERS = [
+    'saying you are not comfortable with this yet is honest — naming it beats guessing '
+    'wildly, and that instinct already works in your favor.',
+    'it is completely okay to not feel comfortable with a topic — being upfront is honest '
+    'and keeps the interviewer on your side.',
+    'drawing a line and saying you are not comfortable is honest and professional — far '
+    'better than a shaky bluff.',
+]
+
+_CONFIDENCE_OPENERS = [
+    'acknowledging a confidence gap takes real honesty — interviewers respect that far '
+    'more than a vague bluff.',
+    'being honest about your confidence level reads as maturity — it beats bluffing '
+    'every single time.',
+    'naming a confidence gap is a strength, not a weakness — honest candidates are the '
+    'ones interviewers trust.',
+]
+
+_NOT_SURE_OPENERS = [
+    'admitting you are not sure is honest — interviewers prefer that over a confident '
+    'wrong guess, and this is the safest way to keep their trust.',
+    '“not sure yet” is a perfectly strong answer — it is honest, and honesty keeps the '
+    'interviewer trusting you.',
+    'saying you are not sure beats guessing — honesty here actually builds credibility.',
+    'being unsure is a normal part of learning; saying so honestly is exactly the right move.',
+]
+
+_DEFAULT_OPENERS = [
+    'thanks for being honest about the gap — interviewers still want to see how you '
+    'reason when stuck.',
+    'being upfront about a gap is honest and human — now we can turn it into a quick win.',
+    'you handled that honestly, and that counts — the next step is showing how you would '
+    'tackle it.',
+]
+
+
 def _uncertainty_opener(answer: str) -> str:
-    low = (answer or '').lower()
+    low = re.sub(r'[^a-z\s]', '', (answer or '').lower())
     if re.search(r'scared|afraid|nervous|anxious|worried|intimidated|panic', low):
-        return (
-            'feeling nervous in an interview is completely normal — thank you for saying so '
-            'instead of freezing or bluffing.'
-        )
-    if re.search(r'uncomfortable|awkward|not\s+(feel(ing)?\s+)?(secure|safe|ready)', low):
-        return (
-            'feeling uncomfortable or not secure with a topic is okay — naming that is better '
-            'than guessing wildly.'
-        )
+        return random.choice(_NERVOUS_OPENERS)
+    if re.search(r'uncomfortable|awkward|not\s+(feel(ing)?\s+)?(secure|safe|ready|comfortable)', low):
+        return random.choice(_COMFORT_OPENERS)
     if re.search(r'confident|confidence|knowledge|unfamiliar|experience|expertise|depth', low):
-        return (
-            'acknowledging a confidence or knowledge gap is honest — interviewers respect that '
-            'more than a vague bluff.'
-        )
+        return random.choice(_CONFIDENCE_OPENERS)
     if re.search(
-        r'not\s+(really\s+)?sure|unsure|uncertain|no\s+(idea|clue)|don\'?t\s+know|dont\s+know|idk',
+        r'not\s+(really\s+)?sure|unsure|uncertain|no\s+(idea|clue)|dont\s+know|idk',
         low,
     ):
-        return (
-            'saying you don’t know / aren’t sure is honest — interviewers prefer that over a '
-            'confident wrong guess.'
-        )
-    return (
-        'thanks for being honest about the gap — interviewers still want to see how you reason '
-        'when stuck.'
-    )
+        return random.choice(_NOT_SURE_OPENERS)
+    return random.choice(_DEFAULT_OPENERS)
+
+
+# Rotating coaching suggestions so repeated uncertainty answers never feel canned.
+_UNCERTAINTY_TIPS = [
+    "Next time, try the 'what I remember → what I'd look up → one small guess' structure — "
+    'even a partial attempt scores.',
+    'A tiny attempt still wins points: name one related concept you do know and connect it '
+    'back to the question.',
+    'When stuck, say what you would do to find the answer and add one hypothesis — that shows '
+    'engineering instincts.',
+    'Practise the definition → one example → one caveat pattern aloud; it turns blanks into answers.',
+    'Give yourself ten seconds to outline a single-sentence answer — structure beats silence '
+    'in every interview.',
+    'Answer with the closest thing you are sure about — interviewers care how you reason, '
+    'not just what you recall.',
+]
+
+_UNCERTAINTY_CLOSERS = [
+    "You'll get there — every question you meet here is one fewer surprise on interview day.",
+    'This is exactly what practice is for: better to face it here first than in the real room.',
+    'Keep going — recognizing the gap is the first step to closing it, and you just took it.',
+    'You are doing the right thing by training here; consistency turns gaps into strengths.',
+    'Every senior engineer has blanked on a question before — bouncing back is the skill '
+    'interviewers notice most.',
+    'Read the model answer once, then next time try rewriting it in your own words — it sticks.',
+]
+
+_UNCERTAINTY_IMPROVEMENTS = [
+    'Retry aloud using the model answer above in your own words.',
+    'Use the remember → look up → guess structure next time you are unsure.',
+    'Say one related concept you are sure about before admitting the gap.',
+    'Turn the blank into a hypothesis: “I would start by checking…”.',
+]
 
 
 def evaluate_answer_heuristic(
@@ -415,20 +550,19 @@ def evaluate_answer_heuristic(
     # Honest uncertainty / nerves — teach + motivate (never "drifts away")
     if _is_uncertainty_reply(a):
         opener = _uncertainty_opener(a)
+        tip = random.choice(_UNCERTAINTY_TIPS)
+        closer = random.choice(_UNCERTAINTY_CLOSERS)
+        improvements = random.sample(_UNCERTAINTY_IMPROVEMENTS, 2)
         feedback = (
             f'Regarding “{snippet}”: {opener} '
-            f'Next time, still try a tiny structure even when unsure '
-            f'(what you remember → what you’d look up → one guess). '
+            f'{tip} {closer} '
             f'Here is a short model answer to study for this question: {hint}'
         )
         return {
             'score': 1.0,
             'feedback': feedback,
             'strengths': ['Honest about a knowledge or confidence gap'],
-            'improvements': [
-                'Use definition → comparison/steps → example when unsure.',
-                'Retry aloud using the model answer above.',
-            ],
+            'improvements': improvements,
             'relevance': 'partial',
             'latency_ms': 0.0,
         }

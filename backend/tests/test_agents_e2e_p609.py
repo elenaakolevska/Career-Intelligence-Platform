@@ -136,6 +136,8 @@ def _assert_report_structure(state: dict, *, note: str):
         'market_trends',
         'skill_gaps',
         'learning_roadmap',
+        'insights',
+        'sources',
         'missing_sections',
         'meta',
     ):

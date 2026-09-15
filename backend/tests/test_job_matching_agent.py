@@ -12,8 +12,7 @@ from app.agents.job_matching_agent import RANKED_JOB_KEYS, normalize_ranked_job,
 from app.agents.state import initial_state
 from app.db import Base
 from app.services.embedding_pipeline import embed_jobs_batch
-from app.services.embedding_service import embed
-from app.services.faiss_store import FaissStore, get_store, reset_stores
+from app.services.faiss_store import reset_stores
 from app.services.reranker import rerank_jobs
 from app.services.user_service import UserService
 
@@ -40,6 +39,9 @@ def isolated_index(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, 'llm_provider', 'stub')
     monkeypatch.setattr(settings, 'faiss_index_dir', str(tmp_path / 'faiss'))
     monkeypatch.setattr(settings, 'rerank_enabled', False)
+    # Hermetic: never enter live-Adzuna mode, which filters out mock sources.
+    monkeypatch.setattr(settings, 'adzuna_app_id', None)
+    monkeypatch.setattr(settings, 'adzuna_use_mock', True)
     reset_stores()
     yield
     reset_stores()

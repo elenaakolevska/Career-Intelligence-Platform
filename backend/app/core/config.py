@@ -1,7 +1,23 @@
+import logging
+import secrets
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 from typing import Any
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
+
+# Known-insecure values: if the secret is unset or one of these is used,
+# an ephemeral random secret is generated instead so tokens are never
+# signed with a publicly guessable key.
+INSECURE_JWT_SECRETS = {
+    'skillbridge-dev-secret-change-me',
+    'changeme',
+    'change-me',
+    'secret',
+    'dev-secret',
+}
 
 
 def _parse_list_value(value: Any) -> list[str]:
@@ -86,7 +102,7 @@ class Settings(BaseSettings):
     serpapi_cache_ttl_seconds: int = 86400
 
     # Auth / JWT
-    jwt_secret: str = 'skillbridge-dev-secret-change-me'
+    jwt_secret: str | None = None
     jwt_algorithm: str = 'HS256'
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
 
@@ -94,6 +110,18 @@ class Settings(BaseSettings):
     enable_cv_llm_parse: bool = True
     enable_ats_scoring: bool = True
     enable_auto_embed: bool = True
+
+    @field_validator('jwt_secret', mode='before')
+    @classmethod
+    def _ensure_jwt_secret(cls, value: Any) -> str:
+        if not value or str(value).strip().lower() in INSECURE_JWT_SECRETS:
+            logger.warning(
+                'JWT_SECRET is not set or uses an insecure default; '
+                'generated an ephemeral random secret. Set JWT_SECRET in the '
+                'environment for persistent login sessions.'
+            )
+            return secrets.token_urlsafe(48)
+        return str(value)
 
     @field_validator(
         'backend_cors_origins',

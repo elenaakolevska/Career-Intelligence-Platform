@@ -12,6 +12,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app.agents.state import CareerGraphState, append_node_log
+from app.services.citations import validate_citations
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,47 @@ REPORT_SECTIONS = (
     'market_trends',
     'skill_gaps',
     'learning_roadmap',
+    'insights',
+    'sources',
     'missing_sections',
     'meta',
 )
+
+
+def _resolve_sources(narratives: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Validate narrative citations against retrieved context and dedupe.
+
+    Returns (insights, sources). A citation ref is only kept when its
+    ``source:id`` (or ``source:doc_id``) matches an item actually present in
+    that narrative's retrieved ``context_items``. Sources are canonicalized to
+    ``source:doc_id`` and deduplicated across all insights.
+    """
+    sources_by_ref: dict[str, dict[str, Any]] = {}
+    insights: list[dict[str, Any]] = []
+
+    for narrative in narratives or []:
+        valid, _invalid = validate_citations(
+            narrative.get('citations'),
+            narrative.get('context_items'),
+        )
+        cited_refs: list[str] = []
+        for canonical in valid:
+            sources_by_ref.setdefault(canonical['ref'], canonical)
+            cited_refs.append(canonical['ref'])
+
+        insights.append(
+            {
+                'skill': narrative.get('skill'),
+                'priority': narrative.get('priority'),
+                'answer': narrative.get('answer'),
+                'grounded': narrative.get('grounded'),
+                'empty_context': narrative.get('empty_context'),
+                'citations': cited_refs,
+                'sources': [sources_by_ref[r] for r in cited_refs],
+            }
+        )
+
+    return insights, list(sources_by_ref.values())
 
 
 def _section_or_missing(value: Any, *, empty_kinds=(None, '', [], {})) -> tuple[Any, bool]:
@@ -75,6 +114,8 @@ def build_final_report(state: CareerGraphState) -> dict[str, Any]:
     else:
         roadmap_payload = roadmap
 
+    insights, sources = _resolve_sources(state.get('retrieval_narratives'))
+
     report = {
         'cv_summary': {
             'text': cv_summary,
@@ -104,6 +145,8 @@ def build_final_report(state: CareerGraphState) -> dict[str, Any]:
             'roadmap': roadmap_payload,
             'available': bool(roadmap),
         },
+        'insights': insights,
+        'sources': sources,
         'missing_sections': missing,
         'meta': {
             'cv_id': state.get('cv_id'),
@@ -135,6 +178,8 @@ def run_report_agent(state: CareerGraphState, db: Session | None = None) -> dict
             'output_keys': ['final_report'],
             'missing_sections': missing,
             'complete': report['meta']['complete'],
+            'insight_count': len(report['insights']),
+            'source_count': len(report['sources']),
         },
     )
     update.update(

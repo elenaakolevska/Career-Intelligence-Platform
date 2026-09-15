@@ -9,6 +9,7 @@ venv/
 .coverage
 htmlcov/
 .pytest_cache/
+*.egg-info/
 
 # Node
 node_modules/
@@ -29,3 +30,6 @@ backend/uploads/
 backend/data/faiss/
 *.faiss
 *_vectors.npy
+
+# RAG evaluation results
+backend/eval/results/

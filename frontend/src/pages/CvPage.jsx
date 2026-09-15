@@ -13,68 +13,130 @@ function ProfileSummaryView({ profile }) {
   if (profile.fallbackText) {
     return <p className="profile-summary-fallback">{profile.fallbackText}</p>
   }
+
+  if (Array.isArray(profile.bullets) && profile.bullets.length > 0) {
+    return (
+      <ul className="profile-summary-list">
+        {profile.bullets.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    )
+  }
+
   return <p className="profile-summary-lead">{profile.paragraph}</p>
 }
 
-function CvProfileBody() {
+function SkillGroup({ title, items, tone = 'good' }) {
+  return (
+    <div className="cv-skill-group">
+      <div className="cv-group-header">
+        <span className="cv-group-label">{title}</span>
+      </div>
+      <div className="cv-skill-pills">
+        {items.length === 0 ? (
+          <span className="muted">No skills detected.</span>
+        ) : (
+          items.map((s) => (
+            <span key={s} className={`cv-skill-pill ${tone}`}>
+              {displaySkillName(s)}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CvProfileBody({ onOpenOverview }) {
   const { cv, report, rerun, running } = useAnalysis()
   const { push } = useToast()
   const skills = extractSkills(cv, report)
   const issues = extractIssues(cv, report)
   const profile = buildProfileSummary(cv, report)
 
+  const groups = skills.length
+    ? [
+        { title: 'Core strengths', items: skills.slice(0, 4), tone: 'good' },
+        { title: 'Technical foundation', items: skills.slice(4, 8), tone: 'indigo' },
+      ]
+    : []
+
+  const orderedIssues = issues.slice(0, 6)
+  const critical = orderedIssues.filter((issue) => /phone|name|experience|measurable|achievement|length|summary|email/i.test(issue.message || ''))
+  const minor = orderedIssues.filter((issue) => !/phone|name|experience|measurable|achievement|length|summary|email/i.test(issue.message || ''))
+
   return (
-    <>
-      <div className="grid2">
-        <div className="card bigcard">
+    <div className="cv-page-section">
+      <div className="cv-grid cv-grid-main">
+        <section className="card cv-panel">
           <div className="cardtitle">
-            Extracted skills <span>{skills.length} detected</span>
+            Extracted profile <span>{skills.length} skills detected</span>
           </div>
-          <div className="chips">
-            {skills.length === 0 ? (
-              <span className="muted">No skills extracted yet.</span>
+
+          <div className="cv-skill-list">
+            {groups.length === 0 ? (
+              <p className="empty-state">No skills detected in the uploaded CV yet.</p>
             ) : (
-              skills.map((s, i) => (
-                <span key={s} className={`chip ${i > 5 ? 'indigo' : 'good'}`}>
-                  {displaySkillName(s)}
-                </span>
+              groups.map((group) => (
+                <SkillGroup key={group.title} title={group.title} items={group.items} tone={group.tone} />
               ))
             )}
           </div>
-          <div className="panelsection">
-            <h4>ATS opportunities</h4>
-            {issues.length === 0 ? (
+
+          <div className="cv-section-divider" />
+
+          <div className="cv-section-header">
+            <h4>ATS insights</h4>
+            <span>{orderedIssues.length} findings</span>
+          </div>
+
+          <div className="cv-ats-groups">
+            {orderedIssues.length === 0 ? (
               <p className="sub">No ATS issues flagged.</p>
             ) : (
-              issues.slice(0, 6).map((issue) => (
-                <div className="recommend" key={`${issue.code}-${issue.message}`}>
-                  <i>!</i>
-                  <span>{issue.message}</span>
-                </div>
-              ))
+              <>
+                {critical.length > 0 && (
+                  <div className="cv-ats-group">
+                    <div className="cv-ats-group-title">Key opportunities</div>
+                    {critical.map((issue) => (
+                      <div className="recommend" key={`${issue.code}-${issue.message}`}>
+                        <i>!</i>
+                        <span>{issue.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {minor.length > 0 && (
+                  <div className="cv-ats-group">
+                    <div className="cv-ats-group-title">Nice-to-improve</div>
+                    {minor.map((issue) => (
+                      <div className="recommend" key={`${issue.code}-${issue.message}`}>
+                        <i>•</i>
+                        <span>{issue.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
-        </div>
-        <div className="card bigcard">
+        </section>
+
+        <section className="card cv-panel cv-summary-panel">
           <div className="cardtitle">
-            AI profile summary <span>Generated from CV</span>
+            AI career summary <span>Generated from CV</span>
           </div>
-          <ProfileSummaryView profile={profile} />
-          <button
-            type="button"
-            className="btn primary"
-            style={{ marginTop: 18 }}
-            disabled={running}
-            onClick={() => {
-              rerun()
-              push('Optimizing profile — re-running analysis…')
-            }}
-          >
-            Optimize CV with AI ✦
+          <div className="cv-summary-block">
+            <ProfileSummaryView profile={profile} />
+          </div>
+
+          <button type="button" className="btn primary cv-overview-button" onClick={onOpenOverview}>
+            Open overview →
           </button>
-        </div>
+        </section>
       </div>
-    </>
+    </div>
   )
 }
 
@@ -115,7 +177,6 @@ function CvUploadPanel({ onUploaded }) {
           setActiveCv(cv)
           onUploaded?.(cv)
         } else {
-          // poll briefly
           const cv = await getCv(uploaded.id)
           setActiveCv(cv)
           onUploaded?.(cv)
@@ -130,49 +191,68 @@ function CvUploadPanel({ onUploaded }) {
   )
 
   return (
-    <div className="card bigcard" style={{ marginBottom: 16 }}>
-      <div className="cardtitle">
-        Upload a new CV <span>PDF</span>
-      </div>
-      {error && (
-        <div className="callout is-error" role="alert">
-          {error}
+    <div className="cv-upload-shell">
+      <div className="card cv-upload-panel">
+        <div className="cv-upload-header">
+          <div>
+            <div className="eyebrow">Upload CV</div>
+            <h2>Bring in your latest profile</h2>
+          </div>
+          <span className="cv-upload-tag">PDF</span>
         </div>
-      )}
-      <label
-        className={['upload-drop', dragOver ? 'is-drag' : ''].filter(Boolean).join(' ')}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragOver(true)
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDragOver(false)
-          const next = e.dataTransfer.files?.[0]
-          if (next) setFile(next)
-        }}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          accept="application/pdf,.pdf"
-          disabled={busy || bootstrapping}
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-        />
-        <strong>{file ? file.name : 'Drop PDF here or browse'}</strong>
-        <span className="muted" style={{ fontSize: 11 }}>
-          {file ? `${Math.max(1, Math.round(file.size / 1024))} KB` : 'application/pdf'}
-        </span>
-      </label>
-      <button
-        type="button"
-        className="btn primary"
-        disabled={busy || !file || !userId}
-        onClick={() => submit()}
-      >
-        {busy ? 'Processing…' : 'Upload and analyze'}
-      </button>
+
+        {error && (
+          <div className="callout is-error" role="alert">
+            {error}
+          </div>
+        )}
+
+        <label
+          className={['upload-drop', dragOver ? 'is-drag' : ''].filter(Boolean).join(' ')}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragOver(true)
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setDragOver(false)
+            const next = e.dataTransfer.files?.[0]
+            if (next) setFile(next)
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            disabled={busy || bootstrapping}
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+          />
+          <div className="cv-upload-drop-inner">
+            <div className="cv-upload-icon">⇪</div>
+            <div className="cv-upload-copy">
+              <strong>{file ? file.name : 'Drop your CV here or browse'}</strong>
+              <span className="muted">
+                {file ? `${Math.max(1, Math.round(file.size / 1024))} KB` : 'Accepted format: PDF only'}
+              </span>
+            </div>
+          </div>
+        </label>
+
+        <div className="cv-upload-meta">
+          <span>Supported: PDF</span>
+          <span>Analysis starts immediately after upload</span>
+        </div>
+
+        <button
+          type="button"
+          className="btn primary cv-upload-button"
+          disabled={busy || !file || !userId}
+          onClick={() => submit()}
+        >
+          {busy ? 'Processing…' : 'Upload and analyze'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -188,20 +268,20 @@ export default function CvPage() {
         title="Your profile, understood."
         sub="AI-extracted skills, experience signals and optimization opportunities."
       />
-      <CvUploadPanel
-        onUploaded={() => {
-          navigate('/dashboard')
-        }}
-      />
-      {hasCompletedCv ? (
-        <AnalysisGate title="My CV">
-          <CvProfileBody />
-        </AnalysisGate>
-      ) : (
-        <div className="card empty-state">
-          Upload a completed CV to see extracted skills, ATS opportunities, and your AI profile summary.
-        </div>
-      )}
+
+      <div className="cv-page-shell">
+        <CvUploadPanel />
+
+        {hasCompletedCv ? (
+          <AnalysisGate title="My CV">
+            <CvProfileBody onOpenOverview={() => navigate('/dashboard')} />
+          </AnalysisGate>
+        ) : (
+          <div className="card empty-state cv-empty-state">
+            Upload a completed CV to see extracted skills, ATS opportunities, and your AI profile summary.
+          </div>
+        )}
+      </div>
     </ViewShell>
   )
 }

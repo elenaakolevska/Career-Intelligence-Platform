@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app import models
+from app.api.deps import get_current_user, get_db
 from app.schemas.retrieval import ContentType, RetrievalResult
 from app.services.retrieval_service import RetrievalService, index_resources
 
@@ -13,6 +14,7 @@ def retrieve_context(
     q: str = Query(..., min_length=1, description='Natural-language retrieval query'),
     top_k: int = Query(default=5, ge=1, le=50),
     sources: list[ContentType] | None = Query(default=None),
+    current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Retrieve grounded context from FAISS across jobs and/or learning resources."""
@@ -20,6 +22,6 @@ def retrieve_context(
 
 
 @router.post('/resources/reindex')
-def reindex_resources():
+def reindex_resources(current_user: models.User = Depends(get_current_user)):
     count = index_resources()
     return {'indexed': count, 'source': 'resources'}

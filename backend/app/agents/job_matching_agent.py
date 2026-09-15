@@ -132,8 +132,8 @@ def run_job_matching_agent(state: CareerGraphState, db: Session) -> dict[str, An
     try:
         jobs_svc = JobsService(db)
         if db.query(models.JobPosting).count() == 0:
-            jobs_svc.seed_mock_jobs()
-            logger.info('job_matching_agent seeded mock jobs')
+            jobs_svc.ensure_corpus_for_cv(cv_id)
+            logger.info('job_matching_agent ensured job corpus for cv_id=%s', cv_id)
 
         top_k = settings.similarity_top_k
         fetch_k = max(top_k * 3, top_k)

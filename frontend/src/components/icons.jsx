@@ -1,13 +1,5 @@
 /** Inline SVG icons matching the SkillBridge prototype. */
 
-export function IconCheck(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-      <path d="M5 12.5 9.2 17 19 7" />
-    </svg>
-  )
-}
-
 export function IconGrid(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>

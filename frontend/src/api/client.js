@@ -153,4 +153,10 @@ export const api = {
       method: 'POST',
       body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
     }),
+  patch: (path, body, options = {}) =>
+    apiRequest(path, {
+      ...options,
+      method: 'PATCH',
+      body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
+    }),
 }

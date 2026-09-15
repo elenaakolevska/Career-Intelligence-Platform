@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -9,7 +7,7 @@ from app.db import Base
 from app import models
 from app.services.embedding_service import embed
 from app.services.faiss_store import FaissStore, reset_stores
-from app.services.retrieval_service import RetrievalService, index_resources, retrieve
+from app.services.retrieval_service import RetrievalService, index_resources
 
 
 @pytest.fixture
@@ -93,18 +91,12 @@ def test_retrieve_empty_query(isolated_stores):
     assert result.items == []
 
 
-def test_module_level_retrieve_wrapper(isolated_stores):
+def test_global_store_retrieval(isolated_stores, monkeypatch):
     _jobs, resources_store = isolated_stores
-    index_resources(store=resources_store)
-    # Use service directly with stores; module wrapper uses global stores — seed globals via reset+index
-    reset_stores()
     from app.core.config import settings
-    from app.services.faiss_store import get_store
 
-    # Point global store at temp dir by indexing through get_store after monkeypatch of faiss dir
-    # Already monkeypatched embedding; set faiss dir via re-get with index_dir through index_resources on global
-    store = get_store('resources', index_dir=str(Path(resources_store.root)))
-    index_resources(store=store)
-    result = retrieve('sentence transformers embeddings NLP', top_k=3, sources=['resources'])
+    monkeypatch.setattr(settings, 'faiss_index_dir', str(resources_store.root))
+    index_resources(store=resources_store)
+    result = RetrievalService().retrieve('sentence transformers embeddings NLP', top_k=3, sources=['resources'])
     assert isinstance(result.latency_ms, float)
     assert result.items

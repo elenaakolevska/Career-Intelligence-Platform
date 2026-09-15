@@ -73,7 +73,12 @@ SAFE_DEFAULTS: dict[str, dict[str, Any]] = {
         }
     },
     'skill_gap_agent': {'skill_gaps': []},
-    'retrieval_agent': {'retrieval_context': [], 'retrieval_requests': []},
+    'retrieval_agent': {
+        'retrieval_context': [],
+        'retrieval_requests': [],
+        'retrieval_narratives': [],
+        'sources': [],
+    },
     'learning_path_agent': {
         'learning_roadmap': {
             'days_30': {'focus': 'Unavailable', 'skills': [], 'resources': []},
@@ -96,6 +101,8 @@ TRACKED_KEYS = (
     'learning_roadmap',
     'final_report',
     'retrieval_context',
+    'retrieval_narratives',
+    'sources',
     'errors',
     'warnings',
 )

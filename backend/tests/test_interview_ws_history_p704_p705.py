@@ -1,14 +1,14 @@
-"""P7-04 WebSocket interview + P7-05 history persistence."""
+﻿"""P7-04 WebSocket interview + P7-05 history persistence."""
 
 from __future__ import annotations
 
-import json
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from starlette.websockets import WebSocketDisconnect
 
 from app.api.deps import get_db
 from app.db import Base
@@ -45,7 +45,7 @@ def client(engine, monkeypatch):
         finally:
             db.close()
 
-    # WebSocket handler opens its own sessions — point at the same in-memory engine
+    # WebSocket handler opens its own sessions â€” point at the same in-memory engine
     monkeypatch.setattr('app.interview.ws_handler.SessionLocal', TestingSessionLocal)
 
     app.dependency_overrides[get_db] = override_get_db
@@ -66,6 +66,12 @@ def _register(client: TestClient, email: str) -> tuple[str, dict]:
 
 def _auth(token: str) -> dict[str, str]:
     return {'Authorization': f'Bearer {token}'}
+
+
+def _ws_url(session_id: int, token: str | None = None) -> str:
+    if token:
+        return f'/api/v1/interview/ws/{session_id}?token={token}'
+    return f'/api/v1/interview/ws/{session_id}'
 
 
 def _start(client: TestClient, token: str, role: str = 'Junior Java Developer') -> dict:
@@ -97,7 +103,7 @@ def test_websocket_multi_turn_exchange(client, db_session):
     started = _start(client, token)
     session_id = started['id']
 
-    with client.websocket_connect(f'/api/v1/interview/ws/{session_id}') as ws:
+    with client.websocket_connect(_ws_url(session_id, token)) as ws:
         connected = ws.receive_json()
         assert connected['type'] == 'connected'
         assert connected['session']['id'] == session_id
@@ -142,14 +148,14 @@ def test_websocket_reconnect_preserves_state(client, db_session):
     started = _start(client, token, role='Python Backend Engineer')
     session_id = started['id']
 
-    with client.websocket_connect(f'/api/v1/interview/ws/{session_id}') as ws:
+    with client.websocket_connect(_ws_url(session_id, token)) as ws:
         assert ws.receive_json()['type'] == 'connected'
         ws.send_json({'type': 'next_question'})
         q = _recv_until(ws, 'question')
         pending = q['question']
 
-    # Reconnect — session state must still have the unanswered question
-    with client.websocket_connect(f'/api/v1/interview/ws/{session_id}') as ws:
+    # Reconnect â€” session state must still have the unanswered question
+    with client.websocket_connect(_ws_url(session_id, token)) as ws:
         connected = ws.receive_json()
         assert connected['type'] == 'connected'
         assert connected['session']['current_question'] == pending
@@ -166,7 +172,7 @@ def test_websocket_errors_are_communicated(client, db_session):
     started = _start(client, token)
     session_id = started['id']
 
-    with client.websocket_connect(f'/api/v1/interview/ws/{session_id}') as ws:
+    with client.websocket_connect(_ws_url(session_id, token)) as ws:
         ws.receive_json()  # connected
         ws.send_json({'type': 'answer', 'answer': 'oops no question yet'})
         err = _recv_until(ws, 'error')
@@ -182,10 +188,30 @@ def test_websocket_errors_are_communicated(client, db_session):
 
 
 def test_websocket_missing_session(client):
-    with client.websocket_connect('/api/v1/interview/ws/99999') as ws:
-        msg = ws.receive_json()
-        assert msg['type'] == 'error'
-        assert msg['code'] == 'not_found'
+    token, _user = _register(client, 'ws-missing@example.com')
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(_ws_url(99999, token)):
+            pass
+    assert exc.value.code == 4404
+
+
+def test_websocket_rejects_missing_token(client):
+    token, _user = _register(client, 'ws-notoken@example.com')
+    started = _start(client, token)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(_ws_url(started['id'], None)):
+            pass
+    assert exc.value.code == 4401
+
+
+def test_websocket_rejects_wrong_owner(client):
+    token_a, _user_a = _register(client, 'ws-owner@example.com')
+    token_b, _user_b = _register(client, 'ws-intruder@example.com')
+    started = _start(client, token_a)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(_ws_url(started['id'], token_b)):
+            pass
+    assert exc.value.code == 4403
 
 
 def test_history_persists_across_multiple_sessions(client, db_session):

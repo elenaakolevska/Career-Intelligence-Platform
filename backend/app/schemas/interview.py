@@ -106,10 +106,3 @@ class InterviewStateRead(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     node_log: list[dict[str, Any]] = Field(default_factory=list)
 
-
-class InterviewUpdate(BaseModel):
-    in_progress: Optional[bool] = None
-    role: Optional[str] = None
-    status: Optional[str] = None
-    difficulty: Optional[str] = None
-    overall_feedback: Optional[str] = None

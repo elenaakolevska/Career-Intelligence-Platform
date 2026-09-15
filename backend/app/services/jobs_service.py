@@ -90,6 +90,12 @@ class JobsService:
         embed_jobs_batch([job.id for job in jobs], self.db)
         return jobs
 
+    def ensure_corpus_for_cv(self, cv_id: int) -> list[models.JobPosting]:
+        """Populate the local job corpus: live Adzuna when configured, else mock."""
+        if settings.adzuna_use_mock or not settings.adzuna_app_id:
+            return self.seed_mock_jobs()
+        return self.fetch_and_store_for_cv(cv_id)
+
     def fetch_and_store_for_cv(self, cv_id: int, *, results_per_page: int = 20) -> list[models.JobPosting]:
         cv = self.db.query(models.CVProfile).filter(models.CVProfile.id == cv_id).first()
         if not cv:
@@ -172,7 +178,7 @@ class JobsService:
     def match_for_cv(self, cv_id: int, top_k: int | None = None) -> list[dict[str, Any]]:
         # Ensure we have jobs to search
         if self.db.query(models.JobPosting).count() == 0:
-            self.seed_mock_jobs()
+            self.ensure_corpus_for_cv(cv_id)
         k = top_k or settings.similarity_top_k
         # Over-fetch then apply the same seniority adjustment used by the Job Matching agent
         from app.agents.job_matching_agent import apply_seniority_adjustment, estimate_candidate_level

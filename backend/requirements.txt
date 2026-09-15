@@ -17,7 +17,7 @@ pymupdf>=1.24.0
 numpy>=1.26.0
 redis>=5.0.0
 langgraph>=0.2.0
+faiss-cpu>=1.8.0
 # Optional heavy deps (install for full local/prod fidelity):
-# faiss-cpu>=1.8.0
 # sentence-transformers>=3.0.0
 # easyocr>=1.7.0

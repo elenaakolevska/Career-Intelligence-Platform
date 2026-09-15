@@ -1,4 +1,4 @@
-import { api, wsUrl } from './client'
+import { api, getStoredToken, wsUrl } from './client'
 
 export function startInterview({ role, cvId, difficulty = 'junior' }) {
   return api.post('/interview/start', {
@@ -11,15 +11,6 @@ export function startInterview({ role, cvId, difficulty = 'junior' }) {
 export function listUserInterviews(userId) {
   if (userId == null) return api.get('/interview/me')
   return api.get(`/interview/user/${userId}`)
-}
-
-export function listUserInterviewSummaries(userId) {
-  if (userId == null) return api.get('/interview/me/summary')
-  return api.get(`/interview/user/${userId}/summary`)
-}
-
-export function getInterview(sessionId) {
-  return api.get(`/interview/${sessionId}`)
 }
 
 export function getInterviewHistory(sessionId) {
@@ -41,5 +32,7 @@ export function abandonInterview(sessionId) {
 }
 
 export function interviewWsUrl(sessionId) {
-  return wsUrl(`/interview/ws/${sessionId}`)
+  const token = getStoredToken()
+  const qs = token ? `?token=${encodeURIComponent(token)}` : ''
+  return wsUrl(`/interview/ws/${sessionId}${qs}`)
 }

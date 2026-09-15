@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps import get_current_user, get_db, require_cv_owner
+from app.api.deps import get_current_user, get_db, get_user_from_token, require_cv_owner
 from app.interview.ws_handler import handle_interview_websocket
 from app.schemas.interview import (
     InterviewAnswerCreate,
@@ -91,8 +91,35 @@ def list_user_interview_summaries(
 
 
 @router.websocket('/ws/{session_id}')
-async def interview_websocket(websocket: WebSocket, session_id: int):
-    """Real-time interview chat: question / answer / feedback over WebSocket (P7-04)."""
+async def interview_websocket(
+    websocket: WebSocket,
+    session_id: int,
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Real-time interview chat: question / answer / feedback over WebSocket (P7-04).
+
+    Auth: browsers cannot set headers on WebSocket connections, so the JWT is
+    passed as a query parameter and verified before the socket is accepted.
+    """
+    try:
+        user = get_user_from_token(token, db)
+    except HTTPException:
+        await websocket.close(code=4401)
+        return
+
+    session = (
+        db.query(models.InterviewSession)
+        .filter(models.InterviewSession.id == session_id)
+        .first()
+    )
+    if session is None:
+        await websocket.close(code=4404)
+        return
+    if session.user_id != user.id:
+        await websocket.close(code=4403)
+        return
+
     await handle_interview_websocket(websocket, session_id)
 
 

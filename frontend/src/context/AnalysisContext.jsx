@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, formatApiError } from '../api/client'
-import { getLatestAnalysis, runAnalysis, seedMockJobs } from '../api/analysis'
+import { getLatestAnalysis, runAnalysis, fetchJobsForCv } from '../api/analysis'
 import { getCv } from '../api/cv'
 import { useSession } from './SessionContext'
 
@@ -13,8 +13,20 @@ export function AnalysisProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState(null)
+  const inFlight = useRef(new Map())
 
   const report = analysis?.final_report || null
+
+  // Deduplicate concurrent analysis runs for the same CV: the auto-run effect
+  // and a manual rerun can both fire before a result exists; share one request.
+  const runAnalysisOnce = useCallback((id) => {
+    if (inFlight.current.has(id)) return inFlight.current.get(id)
+    const promise = runAnalysis(id).finally(() => {
+      if (inFlight.current.get(id) === promise) inFlight.current.delete(id)
+    })
+    inFlight.current.set(id, promise)
+    return promise
+  }, [])
 
   const loadCv = useCallback(async (id) => {
     if (!id) {
@@ -59,13 +71,13 @@ export function AnalysisProvider({ children }) {
           }
         }
         setRunning(true)
-        // Ensure a job corpus exists for matching (idempotent seed)
+        // Ensure a job corpus exists for matching (live Adzuna fetch or mock seed)
         try {
-          await seedMockJobs()
+          await fetchJobsForCv(cvId)
         } catch {
           // Non-fatal if jobs already present / endpoint busy
         }
-        const result = await runAnalysis(cvId)
+        const result = await runAnalysisOnce(cvId)
         setAnalysis(result)
         return result
       } catch (err) {
@@ -77,7 +89,7 @@ export function AnalysisProvider({ children }) {
         setLoading(false)
       }
     },
-    [cvId, hasCompletedCv, loadCv, refreshLatest],
+    [cvId, hasCompletedCv, loadCv, refreshLatest, runAnalysisOnce],
   )
 
   useEffect(() => {
@@ -99,12 +111,12 @@ export function AnalysisProvider({ children }) {
         if (!existing?.final_report) {
           setRunning(true)
           try {
-            await seedMockJobs()
+            await fetchJobsForCv(cvId)
           } catch {
             /* ignore */
           }
           if (cancelled) return
-          const result = await runAnalysis(cvId)
+          const result = await runAnalysisOnce(cvId)
           if (!cancelled) setAnalysis(result)
         }
       } catch (err) {
@@ -121,7 +133,7 @@ export function AnalysisProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [cvId, hasCompletedCv, loadCv, refreshLatest])
+  }, [cvId, hasCompletedCv, loadCv, refreshLatest, runAnalysisOnce])
 
   const value = useMemo(
     () => ({

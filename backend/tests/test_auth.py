@@ -95,6 +95,18 @@ def test_login_rejects_bad_password(client):
     assert resp.status_code == 401
 
 
+def test_login_request_allows_short_password():
+    """LoginRequest must not impose a min-length the frontend doesn't enforce.
+
+    Regression guard: a login attempt with a short password must be accepted by
+    the request schema (the real check is password correctness, not length).
+    """
+    from app.schemas.auth import LoginRequest
+
+    request = LoginRequest(email='alice@example.com', password='x')
+    assert request.password == 'x'
+
+
 def test_me_requires_auth(client):
     resp = client.get('/api/v1/auth/me')
     assert resp.status_code == 401
@@ -157,3 +169,93 @@ def test_spoofed_user_id_on_upload_rejected(client, tmp_path, monkeypatch):
         files={'file': ('cv2.pdf', _pdf_bytes('Java FastAPI'), 'application/pdf')},
     )
     assert ok.status_code == 200
+
+
+def test_update_profile(client):
+    token, user = _register(client)
+
+    resp = client.patch(
+        '/api/v1/users/me',
+        headers=_auth(token),
+        json={'full_name': 'Alice Updated', 'email': 'alice.new@example.com'},
+    )
+    assert resp.status_code == 200
+    assert resp.json()['full_name'] == 'Alice Updated'
+    assert resp.json()['email'] == 'alice.new@example.com'
+    assert resp.json()['id'] == user['id']
+
+    me = client.get('/api/v1/auth/me', headers=_auth(token))
+    assert me.json()['email'] == 'alice.new@example.com'
+
+
+def test_update_email_conflict_rejected(client):
+    token, _user = _register(client, email='first@example.com')
+    _token2, _user2 = _register(client, email='second@example.com')
+
+    resp = client.patch(
+        '/api/v1/users/me',
+        headers=_auth(token),
+        json={'email': 'second@example.com'},
+    )
+    assert resp.status_code == 422
+
+
+def test_change_password_roundtrip(client):
+    token, _user = _register(client)
+
+    resp = client.post(
+        '/api/v1/users/me/password',
+        headers=_auth(token),
+        json={'current_password': 'password123', 'new_password': 'newpassword99'},
+    )
+    assert resp.status_code == 200, resp.text
+
+    old = client.post(
+        '/api/v1/auth/login',
+        json={'email': 'alice@example.com', 'password': 'password123'},
+    )
+    assert old.status_code == 401
+    new = client.post(
+        '/api/v1/auth/login',
+        json={'email': 'alice@example.com', 'password': 'newpassword99'},
+    )
+    assert new.status_code == 200
+
+
+def test_change_password_rejects_wrong_current(client):
+    token, _user = _register(client)
+
+    resp = client.post(
+        '/api/v1/users/me/password',
+        headers=_auth(token),
+        json={'current_password': 'wrong', 'new_password': 'newpassword99'},
+    )
+    assert resp.status_code == 422
+
+
+def test_protected_endpoints_reject_unauthenticated(client):
+    assert client.get('/api/v1/users/1').status_code == 401
+    assert client.post('/api/v1/users/', json={'email': 'anon@example.com'}).status_code == 401
+    assert (
+        client.post(
+            '/api/v1/rag/generate',
+            json={'query': 'python jobs', 'task': 'skill_gap'},
+        ).status_code
+        == 401
+    )
+    assert client.get('/api/v1/rag/tasks').status_code == 401
+    assert client.get('/api/v1/retrieval/', params={'q': 'python'}).status_code == 401
+    assert client.post('/api/v1/retrieval/resources/reindex').status_code == 401
+
+
+def test_user_profile_scoped_to_self(client):
+    token_a, user_a = _register(client, email='self-a@example.com')
+    token_b, user_b = _register(client, email='self-b@example.com')
+
+    own = client.get(f'/api/v1/users/{user_a["id"]}', headers=_auth(token_a))
+    assert own.status_code == 200
+    assert own.json()['id'] == user_a['id']
+
+    other = client.get(f'/api/v1/users/{user_a["id"]}', headers=_auth(token_b))
+    assert other.status_code == 403
+    assert user_b['id'] != user_a['id']

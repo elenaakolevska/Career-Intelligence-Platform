@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from app.schemas.retrieval import ContentType, RetrievedItem
 
 
-RagTask = Literal['market_trends', 'skill_gap', 'learning_roadmap']
+RagTask = Literal['market_trends', 'skill_gap', 'learning_roadmap', 'gap_narrative']
 
 
 class RagRequest(BaseModel):

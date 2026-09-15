@@ -14,8 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.state import CareerGraphState, append_node_log
 from app.core.config import settings
-from app.schemas.retrieval import ContentType
-from app.services.rag_pipeline import RagPipeline
+from app.services.rag_pipeline import RagPipeline, extract_citations
 from app.services.retrieval_service import RetrievalService, ensure_resource_index
 
 logger = logging.getLogger(__name__)
@@ -71,8 +70,6 @@ def build_retrieval_requests(state: CareerGraphState) -> list[dict[str, Any]]:
 def run_retrieval_agent(
     state: CareerGraphState,
     db: Session | None = None,
-    *,
-    run_rag: bool = False,
 ) -> dict[str, Any]:
     logger.info('retrieval_agent start')
     warnings = list(state.get('warnings') or [])
@@ -113,33 +110,12 @@ def run_retrieval_agent(
                 }
             )
 
-        if run_rag:
-            rag = RagPipeline(db, retrieval=retrieval)
-            rag_result = rag.run(
-                query,
-                task='learning_roadmap',
-                profile=state.get('cv_summary'),
-                top_k=top_k,
-                sources=sources,  # type: ignore[arg-type]
-            )
-            context_items.append(
-                {
-                    'id': f'rag:{requesting_agent}:{len(context_items)}',
-                    'source': 'rag',
-                    'score': 1.0,
-                    'title': 'RAG answer',
-                    'text': rag_result.answer,
-                    'url': None,
-                    'type': 'rag_answer',
-                    'metadata': {'empty_context': rag_result.empty_context},
-                    'query': query,
-                    'requesting_agent': requesting_agent,
-                    'skill': req.get('skill'),
-                }
-            )
-
     if not context_items:
         warnings.append('retrieval_agent: no context retrieved for queued queries')
+
+    # Grounded narratives for the top 3 gaps (deterministic gaps remain the
+    # source of truth; RAG only explains relevance / evidence / learning direction).
+    narratives, sources = _run_gap_narratives(state, retrieval, db)
 
     # Preserve any prior context, then append fresh results
     prior = list(state.get('retrieval_context') or [])
@@ -149,8 +125,9 @@ def run_retrieval_agent(
         {
             'event': 'completed',
             'input': {'request_count': len(requests)},
-            'output_keys': ['retrieval_context'],
+            'output_keys': ['retrieval_context', 'retrieval_narratives', 'sources'],
             'context_count': len(context_items),
+            'narrative_count': len(narratives),
             'queries': [r.get('query') for r in requests],
         },
     )
@@ -158,12 +135,94 @@ def run_retrieval_agent(
         {
             'retrieval_context': prior + context_items,
             'retrieval_requests': [],  # clear queue after processing
+            'retrieval_narratives': narratives,
+            'sources': sources,
             'warnings': warnings,
             'status': 'running',
         }
     )
-    logger.info('retrieval_agent end context=%s requests=%s', len(context_items), len(requests))
+    logger.info(
+        'retrieval_agent end context=%s requests=%s narratives=%s',
+        len(context_items),
+        len(requests),
+        len(narratives),
+    )
     return update
+
+
+def _run_gap_narratives(
+    state: CareerGraphState,
+    retrieval: RetrievalService,
+    db: Session | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Generate RAG-grounded narratives for the top 3 skill gaps.
+
+    Returns (narratives, sources). Each narrative explains why the gap is
+    relevant and cites retrieved evidence; the deterministic skill_gaps list
+    remains authoritative for what the gaps actually are.
+    """
+    gaps = list(state.get('skill_gaps') or [])
+    profile = state.get('cv_summary') or ''
+    narratives: list[dict[str, Any]] = []
+    sources_by_ref: dict[str, dict[str, Any]] = {}
+
+    for gap in gaps[:3]:
+        skill = str((gap or {}).get('skill') or '').strip()
+        if not skill:
+            continue
+        query = f'{skill}: why it matters and how to learn it'
+        try:
+            rag = RagPipeline(db, retrieval=retrieval)
+            result = rag.run(
+                query,
+                task='gap_narrative',
+                profile=profile,
+                top_k=3,
+                sources=['jobs', 'resources'],
+            )
+        except Exception as exc:  # noqa: BLE001 — keep narrative optional
+            logger.warning('gap_narrative RAG failed for %r: %s', skill, exc)
+            continue
+
+        context_items = [
+            {
+                'id': item.id,
+                'source': item.source,
+                'doc_id': item.doc_id,
+                'chunk_id': item.chunk_id,
+                'score': item.score,
+                'title': item.title,
+                'url': (item.metadata or {}).get('url'),
+            }
+            for item in result.context_items
+        ]
+
+        citations = extract_citations(result.answer)
+        for item in context_items:
+            ref = f"{item['source']}:{item['doc_id'] or item['id']}"
+            if ref in sources_by_ref:
+                continue
+            sources_by_ref[ref] = {
+                'ref': ref,
+                'source': item['source'],
+                'title': item['title'],
+                'url': item['url'],
+            }
+
+        narratives.append(
+            {
+                'skill': skill,
+                'priority': (gap or {}).get('priority'),
+                'task': 'gap_narrative',
+                'answer': result.answer,
+                'grounded': result.grounded,
+                'empty_context': result.empty_context,
+                'citations': citations,
+                'context_items': context_items,
+            }
+        )
+
+    return narratives, list(sources_by_ref.values())
 
 
 def make_retrieval_agent_node(

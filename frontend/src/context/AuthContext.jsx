@@ -1,5 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { getMe, login as loginRequest, register as registerRequest } from '../api/auth'
+import {
+  changePassword as changePasswordRequest,
+  getMe,
+  login as loginRequest,
+  register as registerRequest,
+  updateProfile as updateProfileRequest,
+} from '../api/auth'
 import { ApiError, clearStoredToken, formatApiError, getStoredToken, setStoredToken } from '../api/client'
 
 const AuthContext = createContext(null)
@@ -81,6 +87,16 @@ export function AuthProvider({ children }) {
     [applySession],
   )
 
+  const updateProfile = useCallback(async ({ full_name, email }) => {
+    const updated = await updateProfileRequest({ full_name, email })
+    setUser(updated)
+    return updated
+  }, [])
+
+  const changePassword = useCallback(async ({ current_password, new_password }) => {
+    await changePasswordRequest({ current_password, new_password })
+  }, [])
+
   const value = useMemo(
     () => ({
       token,
@@ -93,9 +109,11 @@ export function AuthProvider({ children }) {
       error,
       login,
       register,
+      updateProfile,
+      changePassword,
       logout,
     }),
-    [token, user, loading, error, login, register, logout],
+    [token, user, loading, error, login, register, updateProfile, changePassword, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

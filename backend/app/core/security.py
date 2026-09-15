@@ -11,6 +11,13 @@ import jwt
 from app.core.config import settings
 
 
+def _jwt_secret() -> str:
+    secret = settings.jwt_secret
+    if not secret:
+        raise RuntimeError('JWT secret is not configured; set JWT_SECRET in the environment')
+    return secret
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
@@ -29,8 +36,8 @@ def create_access_token(*, subject: str | int, extra: dict[str, Any] | None = No
     payload: dict[str, Any] = {'sub': str(subject), 'exp': expire}
     if extra:
         payload.update(extra)
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return jwt.encode(payload, _jwt_secret(), algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
-    return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    return jwt.decode(token, _jwt_secret(), algorithms=[settings.jwt_algorithm])

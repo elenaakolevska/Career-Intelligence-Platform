@@ -8,10 +8,6 @@ export function getLatestAnalysis(cvId) {
   return api.get(`/analysis/cv/${cvId}/latest`)
 }
 
-export function getAnalysis(analysisId) {
-  return api.get(`/analysis/${analysisId}`)
-}
-
-export function seedMockJobs() {
-  return api.post('/jobs/seed-mock', {})
+export function fetchJobsForCv(cvId) {
+  return api.post(`/jobs/fetch/${cvId}`, {})
 }

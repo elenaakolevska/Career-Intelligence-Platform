@@ -172,6 +172,9 @@ def test_analysis_graph_includes_trends_and_gaps(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, 'llm_provider', 'stub')
     monkeypatch.setattr(settings, 'faiss_index_dir', str(tmp_path / 'faiss'))
     monkeypatch.setattr(settings, 'rerank_enabled', False)
+    # Hermetic: never enter live-Adzuna mode, which filters out mock sources.
+    monkeypatch.setattr(settings, 'adzuna_app_id', None)
+    monkeypatch.setattr(settings, 'adzuna_use_mock', True)
     reset_stores()
 
     engine = create_engine(

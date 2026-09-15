@@ -37,7 +37,11 @@ def search_jobs_for_cv(db: Session, cv_id: int, top_k: int | None = None) -> lis
     # Refresh CV index entry
     cv_store.add(str(cv_id), vector)
 
-    hits = job_store.search(vector, top_k=k)
+    # In live-Adzuna mode the mock corpus must not pollute matches, so over-fetch
+    # and filter out mock sources after ranking.
+    live_mode = bool(settings.adzuna_app_id) and not settings.adzuna_use_mock
+    search_k = max(k * 4, 40) if live_mode else k
+    hits = job_store.search(vector, top_k=search_k)
     if not hits:
         return []
 
@@ -51,6 +55,8 @@ def search_jobs_for_cv(db: Session, cv_id: int, top_k: int | None = None) -> lis
         job = jobs.get(int(jid))
         if not job:
             continue
+        if live_mode and str(job.source or '').startswith('mock'):
+            continue
         ranked.append(
             {
                 'job_id': job.id,
@@ -62,4 +68,6 @@ def search_jobs_for_cv(db: Session, cv_id: int, top_k: int | None = None) -> lis
                 'description': job.description,
             }
         )
+        if len(ranked) >= k:
+            break
     return ranked

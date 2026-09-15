@@ -7,6 +7,7 @@ an explicit hedge instead of a confident hallucinated answer.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Sequence
 
@@ -27,13 +28,31 @@ DEFAULT_SOURCES: dict[RagTask, list[ContentType]] = {
     'market_trends': ['jobs'],
     'skill_gap': ['jobs'],
     'learning_roadmap': ['jobs', 'resources'],
+    'gap_narrative': ['jobs', 'resources'],
 }
 
 TASK_NO_CONTEXT: dict[RagTask, str] = {
     'market_trends': NO_CONTEXT_MARKERS[0],
     'skill_gap': NO_CONTEXT_MARKERS[1],
     'learning_roadmap': NO_CONTEXT_MARKERS[2],
+    'gap_narrative': NO_CONTEXT_MARKERS[3],
 }
+
+_CITATION_RE = re.compile(r'\[(jobs|resources|cvs):([^\]]+)\]')
+
+
+def extract_citations(text: str) -> list[str]:
+    """Return deduped ``source:id`` refs cited in a generated answer."""
+    if not text:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for match in _CITATION_RE.finditer(text):
+        ref = f'{match.group(1)}:{match.group(2)}'
+        if ref not in seen:
+            seen.add(ref)
+            out.append(ref)
+    return out
 
 
 def format_context(items: Sequence[RetrievedItem]) -> str:
@@ -94,6 +113,12 @@ def _stub_grounded_answer(task: RagTask, context: str, profile: str, question: s
     if task == 'skill_gap':
         return (
             f'Based only on CONTEXT {cite_str}, prioritize gaps relative to PROFILE. '
+            f'Question: {question}.'
+        )
+    if task == 'gap_narrative':
+        return (
+            f'Grounded in CONTEXT {cite_str}: this gap is evidenced by the retrieved '
+            f'postings/resources, which also point to a learning direction. '
             f'Question: {question}.'
         )
     return (
@@ -192,13 +217,3 @@ class RagPipeline:
             context_items=list(retrieval.items),
             metadata={'sources': selected_sources, 'cv_id': cv_id},
         )
-
-
-def run_rag(
-    query: str,
-    *,
-    task: RagTask = 'skill_gap',
-    db: Session | None = None,
-    **kwargs,
-) -> RagResponse:
-    return RagPipeline(db).run(query, task=task, **kwargs)

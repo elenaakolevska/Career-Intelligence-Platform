@@ -71,17 +71,6 @@ class ATSResult(BaseModel):
     issues: list[ATSIssue] = Field(default_factory=list)
 
 
-class CVCreate(BaseModel):
-    user_id: int
-    raw_text: Optional[str] = None
-
-
-class CVUpdate(BaseModel):
-    raw_text: Optional[str] = None
-    summary: Optional[str] = None
-    status: Optional[str] = None
-
-
 class CVRead(BaseModel):
     id: int
     user_id: int

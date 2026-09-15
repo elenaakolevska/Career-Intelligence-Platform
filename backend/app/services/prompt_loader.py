@@ -10,12 +10,14 @@ NO_CONTEXT_MARKERS = (
     'Insufficient retrieved context to analyze market trends.',
     'Insufficient retrieved context to determine skill gaps.',
     'Insufficient retrieved context to build a learning roadmap.',
+    'Insufficient retrieved context to explain this gap.',
 )
 
 RAG_PROMPT_FILES = {
     'market_trends': 'market_trends_prompt.txt',
     'skill_gap': 'skill_gap_prompt.txt',
     'learning_roadmap': 'learning_roadmap_prompt.txt',
+    'gap_narrative': 'gap_narrative_prompt.txt',
 }
 
 

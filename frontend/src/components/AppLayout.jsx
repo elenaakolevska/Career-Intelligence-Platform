@@ -1,21 +1,22 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useRef } from 'react'
+import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSession } from '../context/SessionContext'
 import { useToast } from './ToastHost'
 import SessionErrorBanner from './SessionErrorBanner'
 import ToastHost from './ToastHost'
+import BrandLogo from './BrandLogo'
 import {
   IconBars,
   IconBriefcase,
   IconChat,
-  IconCheck,
   IconDoc,
   IconGrid,
   IconList,
   IconSettings,
 } from './icons'
 import { greetingName, initialsFrom } from '../lib/analysisUi'
+import { exportOverviewPdf } from '../lib/exportPdf'
 
 const TITLES = {
   '/dashboard': 'Overview',
@@ -26,12 +27,6 @@ const TITLES = {
   '/roadmap': 'Learning Roadmap',
   '/interview': 'Interview Simulator',
   '/settings': 'Settings',
-}
-
-function isActivePath(pathname, to) {
-  if (to === '/dashboard') return pathname === '/' || pathname.startsWith('/dashboard')
-  if (to === '/cv') return pathname === '/cv' || pathname.startsWith('/cv/')
-  return pathname === to || pathname.startsWith(`${to}/`)
 }
 
 function NavItem({ to, label, icon: Icon, badge, needsCv, hasCompletedCv }) {
@@ -55,20 +50,35 @@ export default function AppLayout() {
   const { userEmail, fullName, logout } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const { push } = useToast()
-  const fileRef = useRef(null)
+  const { push, dismiss } = useToast()
+  const [exporting, setExporting] = useState(false)
 
   const title = TITLES[location.pathname] || 'Overview'
   const first = greetingName(fullName, userEmail)
   const initials = initialsFrom(fullName, userEmail)
+  const isOverview = location.pathname === '/' || location.pathname === '/dashboard'
+
+  async function handleExport() {
+    if (exporting) return
+    setExporting(true)
+    const toastId = push('Preparing report…', { ttl: 0 })
+    try {
+      await exportOverviewPdf()
+      dismiss(toastId)
+      push('Report downloaded')
+    } catch (err) {
+      dismiss(toastId)
+      push('Could not export report')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="app">
       <aside className="sidebar" aria-label="SkillBridge navigation">
         <NavLink to="/dashboard" className="brand">
-          <div className="brandmark">
-            <IconCheck />
-          </div>
+          <BrandLogo size={38} />
           <div>
             <h2>SkillBridge</h2>
             <small>Career Intelligence</small>
@@ -123,25 +133,11 @@ export default function AppLayout() {
             <div className="top-title">{title}</div>
           </div>
           <div className="actions">
-            <button type="button" className="btn" onClick={() => push('Report export prepared')}>
-              Export report
-            </button>
-            <button type="button" className="btn primary" onClick={() => fileRef.current?.click()}>
-              + Upload CV
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              hidden
-              accept=".pdf,application/pdf"
-              onChange={(e) => {
-                if (e.target.files?.[0]) {
-                  push('Opening CV upload…')
-                  navigate('/cv', { state: { file: e.target.files[0] } })
-                  e.target.value = ''
-                }
-              }}
-            />
+            {isOverview && (
+              <button type="button" className="btn" disabled={exporting} onClick={handleExport}>
+                {exporting ? 'Preparing…' : 'Export report'}
+              </button>
+            )}
           </div>
         </header>
         <SessionErrorBanner />

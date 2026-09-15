@@ -16,13 +16,13 @@ class AnalysisService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def _ensure_jobs_indexed(self) -> None:
-        """Seed mock jobs when the corpus is empty so matching/analysis can run offline."""
+    def _ensure_jobs_indexed(self, cv_id: int) -> None:
+        """Seed the corpus when empty so matching/analysis can run (live or mock)."""
         count = self.db.query(models.JobPosting).count()
         if count > 0:
             return
-        logger.info('No job postings found; seeding mock corpus before analysis')
-        JobsService(self.db).seed_mock_jobs()
+        logger.info('No job postings found; ensuring corpus before analysis')
+        JobsService(self.db).ensure_corpus_for_cv(cv_id)
 
     def analyze(self, cv_id: int) -> dict:
         cv = self.db.query(models.CVProfile).filter(models.CVProfile.id == cv_id).first()
@@ -35,7 +35,7 @@ class AnalysisService:
         self.db.refresh(row)
 
         try:
-            self._ensure_jobs_indexed()
+            self._ensure_jobs_indexed(cv_id)
             result = run_career_workflow(self.db, cv_id=cv_id, user_id=cv.user_id)
             state = result['state']
             payload = {

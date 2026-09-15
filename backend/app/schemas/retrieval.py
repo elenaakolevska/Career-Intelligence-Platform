@@ -16,6 +16,8 @@ class RetrievedItem(BaseModel):
     score: float
     title: Optional[str] = None
     text: str
+    doc_id: Optional[str] = None
+    chunk_id: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
